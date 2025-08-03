@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#121212">
+    <title>ScribeAI</title>
+    <link rel="stylesheet" href="/index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.10.0",
+    "marked": "https://esm.sh/marked@^16.1.1"
+  }
+}
+</script>
+</head>
+  <body>
+
+    <div class="app-container">
+      <header class="app-bar">
+        <div class="app-branding">
+          <div class="app-icon">
+            <i class="fas fa-stethoscope"></i>
+          </div>
+          <div class="app-title-container">
+            <h1 class="app-title">ScribeAI</h1>
+            <p class="app-subtitle">specialized for doctors</p>
+          </div>
+        </div>
+        <div class="app-bar-actions">
+            <button id="newButton" class="header-button" title="New Note">
+                <i class="fas fa-plus"></i>
+            </button>
+            <button id="uploadButton" class="header-button" title="Upload Audio File">
+                <i class="fas fa-arrow-up-from-bracket"></i>
+            </button>
+            <button id="downloadAudioButton" class="header-button" title="Download Recorded Audio">
+                <i class="fas fa-file-audio"></i>
+            </button>
+            <button id="downloadNoteButton" class="header-button" title="Download Note (Markdown)">
+                <i class="fas fa-download"></i>
+            </button>
+            <button id="copyMetaButton" class="header-button" title="Copy Metadata">
+                <i class="fas fa-clipboard"></i>
+            </button>
+            <button id="copyButton" class="header-button" title="Copy Polished Note">
+                <i class="fas fa-copy"></i>
+            </button>
+            <div id="settingsMenuContainer" class="settings-menu-container">
+                <button id="settingsButton" class="header-button" title="Settings">
+                    <i class="fas fa-cog"></i>
+                </button>
+                <div id="settingsMenuList" class="settings-menu-list">
+                    <div class="settings-menu-item">
+                        <label class="settings-item-label"><i class="fas fa-globe-americas"></i> Timezone</label>
+                        <div id="timezoneSelectorContainer" class="mode-selector-container">
+                            <button id="timezoneSelectorButton" class="mode-selector-button" title="Select Timezone">
+                                <span id="currentTimezoneName"></span>
+                                <i class="fas fa-chevron-down"></i>
+                            </button>
+                            <div id="timezoneList" class="mode-list"></div>
+                        </div>
+                    </div>
+                    <hr class="settings-divider">
+                    <div class="settings-menu-item">
+                        <label for="autoDownloadToggle" class="settings-item-label"><i class="fas fa-file-download"></i> Auto-download</label>
+                        <div class="auto-download-container">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="autoDownloadToggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="customPromptSettingsItem" style="display: none;">
+                      <hr class="settings-divider">
+                      <div class="settings-menu-item full-width">
+                          <button id="editCustomPromptButton" class="edit-custom-prompt-button">
+                              <i class="fas fa-pencil-alt"></i>
+                              <span>Edit Custom Instructions</span>
+                          </button>
+                      </div>
+                    </div>
+                </div>
+            </div>
+            <button id="themeToggleButton" class="header-button" title="Toggle Theme">
+                <i class="fas fa-sun"></i>
+            </button>
+            <div id="moreMenuContainer" class="more-menu-container">
+              <button id="moreMenuButton" class="header-button" title="More options">
+                  <i class="fas fa-ellipsis-v"></i>
+              </button>
+              <div id="moreMenuList" class="more-menu-list"></div>
+          </div>
+        </div>
+      </header>
+      
+      <div class="sub-header">
+        <div id="modeSelectorContainer" class="mode-selector-container">
+            <button id="modeSelectorButton" class="mode-selector-button" title="Select Note Mode">
+                <span id="currentModeName"></span>
+                <i class="fas fa-chevron-down"></i>
+            </button>
+            <div id="modeList" class="mode-list"></div>
+        </div>
+        <div id="globalStatus" class="global-status"></div>
+      </div>
+      
+      <main class="main-content">
+        <div class="editor-header">
+          <div id="noteMetadata" class="note-metadata">
+            <div class="meta-item" id="meta-datetime" title="Date & Time"><i class="fas fa-calendar-alt"></i><span>--</span></div>
+            <div class="meta-item" id="meta-duration" title="Recording Duration"><i class="fas fa-clock"></i><span>--</span></div>
+            <div class="meta-item" id="meta-size" title="Audio File Size"><i class="fas fa-file-audio"></i><span>--</span></div>
+            <div class="meta-item" id="meta-mode" title="Processing Mode"><i class="fas fa-lightbulb"></i><span>--</span></div>
+            <div class="meta-item" id="meta-cost" title="Estimated Cost (USD)"><i class="fas fa-dollar-sign"></i><span>$0.00000</span></div>
+          </div>
+        </div>
+        
+        <div class="tabs">
+          <div class="tab-buttons">
+            <button class="tab-button active" data-tab-target="#polishedNoteWrapper">Polished</button>
+            <button class="tab-button" data-tab-target="#rawTranscriptionWrapper">Raw</button>
+          </div>
+          <div class="tab-indicator"></div>
+        </div>
+
+        <div class="tab-content">
+          <div id="polishedNoteWrapper" class="tab-pane active">
+            <div id="polishedNote" contenteditable="true" placeholder="Your polished note will appear here..." spellcheck="false"></div>
+          </div>
+          <div id="rawTranscriptionWrapper" class="tab-pane">
+            <button id="copyRawButton" class="copy-pane-button" title="Copy Raw Transcription">
+              <i class="fas fa-copy"></i>
+            </button>
+            <div id="rawTranscription" contenteditable="false" placeholder="Your raw transcription will appear here..."></div>
+          </div>
+        </div>
+      </main>
+    </div>
+    
+    <button id="fabRecord" class="fab" title="Start Recording">
+        <i class="fas fa-microphone"></i>
+    </button>
+    
+    <nav id="bottomNav" class="bottom-nav">
+      <button id="bottomNavNew" class="bottom-nav-item" title="New Note">
+          <i class="fas fa-plus"></i>
+          <span>New</span>
+      </button>
+      <button id="bottomNavRecord" class="bottom-nav-item record" title="Start Recording">
+          <i class="fas fa-microphone"></i>
+      </button>
+      <button id="bottomNavUpload" class="bottom-nav-item" title="Upload Audio">
+          <i class="fas fa-arrow-up-from-bracket"></i>
+          <span>Upload</span>
+      </button>
+    </nav>
+
+    <div id="recordingDialog" class="recording-dialog">
+        <div class="recording-interface">
+            <div id="liveRecordingTitle" class="live-recording-title"></div>
+            <canvas id="liveWaveformCanvas"></canvas>
+            <div id="liveRecordingTimerDisplay" class="live-recording-timer">00:00.00</div>
+        </div>
+        <div class="live-controls">
+            <button id="pauseButton" class="control-button" title="Pause Recording">
+                <i class="fas fa-pause"></i>
+            </button>
+            <button id="stopButton" class="stop-button" title="Stop Recording">
+                <i class="fas fa-stop"></i>
+            </button>
+            <button id="lapButton" class="control-button" title="Mark Lap">
+                <i class="fas fa-flag-checkered"></i>
+            </button>
+        </div>
+    </div>
+    
+    <input type="file" id="audioUploadInput" accept="audio/*" style="display: none;" />
+    
+    <div id="customPromptModal" class="modal-overlay" style="display: none;">
+      <div class="modal-content">
+        <h3>Custom Instructions</h3>
+        <p>Enter the instructions for the AI to follow. This will be saved for future use with the 'Custom' mode.</p>
+        <textarea id="customPromptTextarea" rows="12" placeholder="e.g., Summarize the following text into three bullet points..."></textarea>
+        <div class="modal-actions">
+          <button id="cancelCustomPromptButton" class="modal-button secondary">Cancel</button>
+          <button id="saveCustomPromptButton" class="modal-button primary">Save</button>
+        </div>
+      </div>
+    </div>
+    
+    <div id="infoModal" class="modal-overlay" style="display: none;">
+      <div class="modal-content">
+        <h3 id="infoModalTitle"></h3>
+        <div id="infoModalContent" class="info-modal-prose"></div>
+        <div class="modal-actions">
+          <button id="infoModalCloseButton" class="modal-button primary">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="timezoneModal" class="modal-overlay" style="display: none;">
+      <div class="modal-content">
+        <h3>Select Timezone</h3>
+        <div id="mobileTimezoneList" class="mobile-list-container"></div>
+        <div class="modal-actions">
+          <button id="timezoneModalCloseButton" class="modal-button secondary">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

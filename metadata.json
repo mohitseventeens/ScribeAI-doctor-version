@@ -1,0 +1,8 @@
+{
+  "name": "Copy of ScribeAI v1",
+  "description": "Waveform improved",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "prompt": ""
+}
