@@ -436,6 +436,18 @@ class VoiceNotesApp {
   private autoDownloadToggle: HTMLInputElement;
   private autoDownloadEnabled: boolean = false;
 
+  // Security properties
+  private pinModal: HTMLDivElement;
+  private pinTitle: HTMLHeadingElement;
+  private pinSubtitle: HTMLParagraphElement;
+  private pinForm: HTMLDivElement;
+  private pinInputs: HTMLInputElement[];
+  private pinErrorMessage: HTMLDivElement;
+  private pinSubmitButton: HTMLButtonElement;
+  private pinForgotButton: HTMLButtonElement;
+  private pinMode: 'set' | 'enter' | 'confirm' = 'enter';
+  private firstPinAttempt = '';
+
   constructor() {
     this.genAI = new GoogleGenAI({
       apiKey: process.env.API_KEY!,
@@ -527,7 +539,31 @@ class VoiceNotesApp {
     this.tabButtons = document.querySelectorAll('.tab-button');
     this.tabIndicator = document.querySelector('.tab-indicator') as HTMLDivElement;
     this.tabPanes = document.querySelectorAll('.tab-pane');
+    
+    // Get PIN modal elements
+    this.pinModal = document.getElementById('pinModal') as HTMLDivElement;
+    this.pinTitle = document.getElementById('pinTitle') as HTMLHeadingElement;
+    this.pinSubtitle = document.getElementById('pinSubtitle') as HTMLParagraphElement;
+    this.pinForm = document.getElementById('pinForm') as HTMLDivElement;
+    this.pinInputs = Array.from(this.pinForm.querySelectorAll('.pin-input'));
+    this.pinErrorMessage = document.getElementById('pinErrorMessage') as HTMLDivElement;
+    this.pinSubmitButton = document.getElementById('pinSubmitButton') as HTMLButtonElement;
+    this.pinForgotButton = document.getElementById('pinForgotButton') as HTMLButtonElement;
 
+    // Start the security check first.
+    this.initSecurity();
+  }
+
+  private async initSecurity(): Promise<void> {
+    const pinHash = localStorage.getItem('scribeai_pin_hash');
+    if (pinHash) {
+        this.showEnterPinScreen();
+    } else {
+        this.showSetPinScreen();
+    }
+  }
+  
+  private initializeApp(): void {
     this.bindEventListeners();
     this.initTheme();
     this.initTabs();
@@ -540,6 +576,142 @@ class VoiceNotesApp {
     this.downloadAudioButton.disabled = true;
 
     this.setGlobalStatus('Ready to record');
+  }
+
+  private showSetPinScreen(): void {
+    this.pinMode = 'set';
+    this.pinModal.style.display = 'flex';
+    this.pinTitle.textContent = 'Create a PIN';
+    this.pinSubtitle.textContent = 'Set a 4-digit PIN to secure your notes.';
+    this.pinSubmitButton.textContent = 'Save PIN';
+    this.pinSubmitButton.disabled = true;
+    this.pinForgotButton.style.display = 'none';
+    this.bindPinEvents();
+    this.pinInputs[0].focus();
+  }
+
+  private showEnterPinScreen(): void {
+    this.pinMode = 'enter';
+    this.pinModal.style.display = 'flex';
+    this.pinTitle.textContent = 'Enter PIN';
+    this.pinSubtitle.textContent = 'Enter your 4-digit PIN to unlock.';
+    this.pinSubmitButton.textContent = 'Unlock';
+    this.pinSubmitButton.disabled = true;
+    this.pinForgotButton.style.display = 'block';
+    this.bindPinEvents();
+    this.pinInputs[0].focus();
+  }
+
+  private async hashPin(pin: string): Promise<string> {
+    const salt = 'scribeai-static-salt'; 
+    const msgUint8 = new TextEncoder().encode(pin + salt);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  private bindPinEvents(): void {
+    this.pinInputs.forEach((input, index) => {
+        input.addEventListener('input', () => this.handlePinInput(index));
+        input.addEventListener('keydown', (e) => this.handlePinBackspace(e, index));
+        input.addEventListener('focus', () => input.select());
+    });
+    this.pinSubmitButton.addEventListener('click', () => this.handlePinSubmit());
+    this.pinForgotButton.addEventListener('click', () => this.handleForgotPin());
+  }
+
+  private handlePinInput(index: number): void {
+    this.pinErrorMessage.style.display = 'none';
+    const input = this.pinInputs[index];
+    if (input.value && index < this.pinInputs.length - 1) {
+        this.pinInputs[index + 1].focus();
+    }
+    const fullPin = this.pinInputs.map(i => i.value).join('');
+    this.pinSubmitButton.disabled = fullPin.length !== 4;
+  }
+  
+  private handlePinBackspace(e: KeyboardEvent, index: number): void {
+      if (e.key === 'Backspace' && !this.pinInputs[index].value && index > 0) {
+          this.pinInputs[index - 1].focus();
+      }
+  }
+
+  private async handlePinSubmit(): Promise<void> {
+    const pin = this.pinInputs.map(i => i.value).join('');
+    if (pin.length !== 4) return;
+    
+    this.pinSubmitButton.disabled = true;
+    
+    switch (this.pinMode) {
+      case 'set':
+        this.firstPinAttempt = pin;
+        this.pinMode = 'confirm';
+        this.pinTitle.textContent = 'Confirm PIN';
+        this.pinSubtitle.textContent = 'Please enter your PIN again.';
+        this.pinSubmitButton.textContent = 'Confirm';
+        this.clearPinInputs();
+        break;
+        
+      case 'confirm':
+        if (pin === this.firstPinAttempt) {
+            const pinHash = await this.hashPin(pin);
+            localStorage.setItem('scribeai_pin_hash', pinHash);
+            this.unlockApp();
+        } else {
+            this.pinErrorMessage.textContent = 'PINs do not match. Please try again.';
+            this.pinErrorMessage.style.display = 'block';
+            this.pinForm.classList.add('shake');
+            setTimeout(() => this.pinForm.classList.remove('shake'), 500);
+            
+            this.pinMode = 'set';
+            this.pinTitle.textContent = 'Create a PIN';
+            this.pinSubtitle.textContent = 'Set a 4-digit PIN to secure your notes.';
+            this.pinSubmitButton.textContent = 'Save PIN';
+            this.clearPinInputs();
+        }
+        break;
+        
+      case 'enter':
+        const storedHash = localStorage.getItem('scribeai_pin_hash');
+        const enteredHash = await this.hashPin(pin);
+        if (enteredHash === storedHash) {
+            this.unlockApp();
+        } else {
+            this.pinErrorMessage.textContent = 'Incorrect PIN. Please try again.';
+            this.pinErrorMessage.style.display = 'block';
+            this.pinForm.classList.add('shake');
+            setTimeout(() => this.pinForm.classList.remove('shake'), 500);
+            this.clearPinInputs();
+        }
+        break;
+    }
+  }
+  
+  private handleForgotPin(): void {
+    const confirmation = confirm(
+      'Are you sure you want to reset your PIN?\n\nWARNING: This action will erase all your notes and settings. This cannot be undone.'
+    );
+    if (confirmation) {
+        localStorage.removeItem('scribeai_pin_hash');
+        localStorage.removeItem('selectedMode');
+        localStorage.removeItem('customPromptInstructions');
+        localStorage.removeItem('selectedTimezone');
+        localStorage.removeItem('autoDownloadEnabled');
+        
+        this.clearPinInputs();
+        this.showSetPinScreen();
+    }
+  }
+
+  private clearPinInputs(): void {
+    this.pinInputs.forEach(input => (input.value = ''));
+    this.pinInputs[0].focus();
+    this.pinSubmitButton.disabled = true;
+  }
+  
+  private unlockApp(): void {
+    this.pinModal.style.display = 'none';
+    this.initializeApp();
   }
 
   private bindEventListeners(): void {

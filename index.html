@@ -216,6 +216,24 @@
       </div>
     </div>
 
+    <div id="pinModal" class="modal-overlay" style="display: none;">
+      <div class="modal-content pin-modal-content">
+        <h3 id="pinTitle"></h3>
+        <p id="pinSubtitle" class="pin-subtitle"></p>
+        <div id="pinForm" class="pin-form">
+          <input type="password" class="pin-input" maxlength="1" inputmode="numeric" />
+          <input type="password" class="pin-input" maxlength="1" inputmode="numeric" />
+          <input type="password" class="pin-input" maxlength="1" inputmode="numeric" />
+          <input type="password" class="pin-input" maxlength="1" inputmode="numeric" />
+        </div>
+        <div id="pinErrorMessage" class="pin-error-message" style="display: none;"></div>
+        <div class="modal-actions">
+          <button id="pinForgotButton" class="modal-button secondary" style="display: none;">Forgot PIN</button>
+          <button id="pinSubmitButton" class="modal-button primary"></button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>
