@@ -1696,7 +1696,7 @@ ${this.allRawLapText}`;
         this.polishedNote.innerHTML = htmlContent;
         this.polishedNote.classList.remove('placeholder-active');
         if (this.currentNote) this.currentNote.polishedNote = polishedText;
-        this.setGlobalStatus('Note polished. Ready for next recording.');
+        this.setGlobalStatus('Note polished.');
         if (this.autoDownloadEnabled) {
           // Add a small delay so the user can see the status change before download
           setTimeout(() => this.downloadPolishedNote(), 500);
