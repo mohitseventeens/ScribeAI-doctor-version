@@ -322,7 +322,7 @@ interface Note {
 }
 
 class VoiceNotesApp {
-  private genAI: any;
+  private genAI: any = null;
   private mediaRecorder: MediaRecorder | null = null;
   private newButton: HTMLButtonElement;
   private uploadButton: HTMLButtonElement;
@@ -447,12 +447,15 @@ class VoiceNotesApp {
   private pinForgotButton: HTMLButtonElement;
   private pinMode: 'set' | 'enter' | 'confirm' = 'enter';
   private firstPinAttempt = '';
+  
+  // API Key properties
+  private apiKeyModal: HTMLDivElement;
+  private apiKeyInput: HTMLInputElement;
+  private saveApiKeyButton: HTMLButtonElement;
+  private toggleApiKeyVisibilityButton: HTMLButtonElement;
+  private updateApiKeyButton: HTMLButtonElement;
 
   constructor() {
-    this.genAI = new GoogleGenAI({
-      apiKey: process.env.API_KEY!,
-    });
-
     // Main buttons
     this.newButton = document.getElementById('newButton') as HTMLButtonElement;
     this.uploadButton = document.getElementById('uploadButton') as HTMLButtonElement;
@@ -550,6 +553,13 @@ class VoiceNotesApp {
     this.pinSubmitButton = document.getElementById('pinSubmitButton') as HTMLButtonElement;
     this.pinForgotButton = document.getElementById('pinForgotButton') as HTMLButtonElement;
 
+    // Get API Key modal elements
+    this.apiKeyModal = document.getElementById('apiKeyModal') as HTMLDivElement;
+    this.apiKeyInput = document.getElementById('apiKeyInput') as HTMLInputElement;
+    this.saveApiKeyButton = document.getElementById('saveApiKeyButton') as HTMLButtonElement;
+    this.toggleApiKeyVisibilityButton = document.getElementById('toggleApiKeyVisibility') as HTMLButtonElement;
+    this.updateApiKeyButton = document.getElementById('updateApiKeyButton') as HTMLButtonElement;
+
     // Start the security check first.
     this.initSecurity();
   }
@@ -557,7 +567,15 @@ class VoiceNotesApp {
   private async initSecurity(): Promise<void> {
     const pinHash = localStorage.getItem('scribeai_pin_hash');
     if (pinHash) {
-        this.showEnterPinScreen();
+        let refreshCount = parseInt(localStorage.getItem('scribeai_refresh_count') || '0', 10);
+        refreshCount++;
+        
+        if (refreshCount >= 10) {
+            this.showEnterPinScreen(); // This will lead to handlePinSubmit, which will reset the counter on success.
+        } else {
+            localStorage.setItem('scribeai_refresh_count', String(refreshCount));
+            this.unlockApp(); // Just unlock, no PIN needed.
+        }
     } else {
         this.showSetPinScreen();
     }
@@ -575,8 +593,78 @@ class VoiceNotesApp {
     this.createNewNote();
     this.downloadAudioButton.disabled = true;
 
-    this.setGlobalStatus('Ready to record');
+    this.initApiKey();
   }
+
+  private initApiKey(): void {
+    const apiKey = localStorage.getItem('gemini_api_key');
+    if (apiKey) {
+      this.initializeGenAI(apiKey);
+    } else {
+      this.apiKeyModal.style.display = 'flex';
+      this.disableAppFeatures();
+      this.setGlobalStatus('API Key required to begin', false, true);
+    }
+  }
+  
+  private initializeGenAI(apiKey: string): void {
+    try {
+      this.genAI = new GoogleGenAI({ apiKey });
+      this.apiKeyModal.style.display = 'none';
+      this.enableAppFeatures();
+      this.setGlobalStatus('Ready to record');
+    } catch (e) {
+      console.error('Error initializing GoogleGenAI:', e);
+      this.setGlobalStatus('Failed to initialize AI.', false, true);
+      this.disableAppFeatures();
+    }
+  }
+
+  private disableAppFeatures(): void {
+    this.fabRecord.disabled = true;
+    this.uploadButton.disabled = true;
+    this.bottomNavRecord.disabled = true;
+    this.bottomNavUpload.disabled = true;
+  }
+
+  private enableAppFeatures(): void {
+    this.fabRecord.disabled = false;
+    this.uploadButton.disabled = false;
+    this.bottomNavRecord.disabled = false;
+    this.bottomNavUpload.disabled = false;
+  }
+  
+  private handleSaveApiKey(): void {
+    const apiKey = this.apiKeyInput.value.trim();
+    if (apiKey) {
+      localStorage.setItem('gemini_api_key', apiKey);
+      this.initializeGenAI(apiKey);
+    } else {
+      this.apiKeyInput.reportValidity();
+    }
+  }
+
+  private handleUpdateApiKey(): void {
+    this.apiKeyInput.value = localStorage.getItem('gemini_api_key') || '';
+    this.apiKeyModal.style.display = 'flex';
+    this.closeSettingsMenu();
+    this.closeMoreMenu();
+  }
+
+  private toggleApiKeyVisibility(): void {
+    const icon = this.toggleApiKeyVisibilityButton.querySelector('i');
+    if (!icon) return;
+    if (this.apiKeyInput.type === 'password') {
+        this.apiKeyInput.type = 'text';
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+    } else {
+        this.apiKeyInput.type = 'password';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+    }
+  }
+
 
   private showSetPinScreen(): void {
     this.pinMode = 'set';
@@ -656,6 +744,7 @@ class VoiceNotesApp {
         if (pin === this.firstPinAttempt) {
             const pinHash = await this.hashPin(pin);
             localStorage.setItem('scribeai_pin_hash', pinHash);
+            localStorage.setItem('scribeai_refresh_count', '0'); // Reset counter
             this.unlockApp();
         } else {
             this.pinErrorMessage.textContent = 'PINs do not match. Please try again.';
@@ -675,6 +764,7 @@ class VoiceNotesApp {
         const storedHash = localStorage.getItem('scribeai_pin_hash');
         const enteredHash = await this.hashPin(pin);
         if (enteredHash === storedHash) {
+            localStorage.setItem('scribeai_refresh_count', '0'); // Reset counter
             this.unlockApp();
         } else {
             this.pinErrorMessage.textContent = 'Incorrect PIN. Please try again.';
@@ -697,6 +787,8 @@ class VoiceNotesApp {
         localStorage.removeItem('customPromptInstructions');
         localStorage.removeItem('selectedTimezone');
         localStorage.removeItem('autoDownloadEnabled');
+        localStorage.removeItem('gemini_api_key');
+        localStorage.removeItem('scribeai_refresh_count');
         
         this.clearPinInputs();
         this.showSetPinScreen();
@@ -762,6 +854,11 @@ class VoiceNotesApp {
     });
 
     this.autoDownloadToggle.addEventListener('change', () => this.handleAutoDownloadToggle());
+
+    // API Key Listeners
+    this.saveApiKeyButton.addEventListener('click', () => this.handleSaveApiKey());
+    this.updateApiKeyButton.addEventListener('click', () => this.handleUpdateApiKey());
+    this.toggleApiKeyVisibilityButton.addEventListener('click', () => this.toggleApiKeyVisibility());
 
     document.addEventListener('click', (e) => this.handleDocumentClick(e));
     window.addEventListener('resize', this.handleResize.bind(this));
@@ -1147,6 +1244,7 @@ class VoiceNotesApp {
         { id: 'downloadAudio', icon: 'fa-file-audio', text: 'Download Audio', action: () => this.downloadFullAudio(), condition: true },
         { id: 'download', icon: 'fa-download', text: 'Download Note', action: () => this.downloadPolishedNote(), condition: true },
         { id: 'copyMeta', icon: 'fa-clipboard', text: 'Copy Metadata', action: () => this.copyMetadata(), condition: true },
+        { id: 'updateKey', icon: 'fa-key', text: 'Update API Key', action: () => this.handleUpdateApiKey(), condition: true },
         { id: 'timezone', icon: 'fa-globe-americas', text: 'Timezone', action: () => this.openTimezoneModal(), state: this.currentTimezone, condition: true },
         { id: 'autoDownload', icon: 'fa-file-download', text: 'Auto-download Note', action: () => this.handleAutoDownloadFromMenu(), state: this.autoDownloadEnabled ? 'On' : 'Off', condition: true },
         { id: 'editCustom', icon: 'fa-pencil-alt', text: 'Edit Custom Prompt', action: () => this.openCustomPromptModal(), condition: this.currentModeId === 'custom' },
@@ -1645,7 +1743,13 @@ class VoiceNotesApp {
     } catch (error) {
       console.error(`Error getting transcription for ${context}:`, error);
       const message = error instanceof Error ? error.message : String(error);
-      this.setGlobalStatus(`Error transcribing ${context}.`, false, true);
+      if (message.includes('API key not valid')) {
+        this.setGlobalStatus('API Key is invalid. Please update it.', false, true);
+        this.handleUpdateApiKey();
+        this.disableAppFeatures();
+      } else {
+        this.setGlobalStatus(`Error transcribing ${context}.`, false, true);
+      }
       return `[Error during transcription: ${message}]`;
     }
   }
@@ -1709,7 +1813,13 @@ ${this.allRawLapText}`;
     } catch (error) {
       console.error('Error polishing note:', error);
       const message = error instanceof Error ? error.message : String(error);
-      this.setGlobalStatus('Error polishing note. Please try again.', false, true);
+      if (message.includes('API key not valid')) {
+        this.setGlobalStatus('API Key is invalid. Please update it.', false, true);
+        this.handleUpdateApiKey();
+        this.disableAppFeatures();
+      } else {
+        this.setGlobalStatus('Error polishing note. Please try again.', false, true);
+      }
       this.polishedNote.innerHTML = `<p><em>Error during polishing: ${message}</em></p>`;
       this.polishedNote.classList.add('placeholder-active');
     } finally {
@@ -1812,7 +1922,7 @@ ${this.allRawLapText}`;
     if (this.sessionAudioChunks.length === 0) {
       console.warn('No audio chunks recorded to download.');
       this.setButtonState(this.downloadAudioButton, 'error');
-      const message = 'No audio has been recorded to download.';
+      const message = 'Audio missing...';
       this.setGlobalStatus(message, false, true);
       setTimeout(() => {
         if (this.globalStatus.textContent?.includes(message)) {
@@ -1848,9 +1958,9 @@ ${this.allRawLapText}`;
   
   private async downloadPolishedNote(): Promise<void> {
     if (!this.currentNote || !this.currentNote.polishedNote.trim()) {
-        console.warn('No polished note content to download.');
+        console.warn('No polished note.');
         this.setButtonState(this.downloadNoteButton, 'error');
-        const message = 'There is no polished note to download.';
+        const message = 'Empty Export...';
         this.setGlobalStatus(message, false, true);
         setTimeout(() => {
             if (this.globalStatus.textContent?.includes(message)) {
